@@ -1,0 +1,35 @@
+{
+  "deployment_id": 5518,
+  "service": "payment-service",
+  "environment": "production",
+  "version": "v2.41.0",
+  "previous_version": "v2.40.3",
+  "released_at": "2026-09-29T13:27:14Z",
+  "detected_at": "2026-09-29T13:48:02Z",
+  "minutes_before_detection": 21,
+  "author": "dev-payments@acme.test",
+  "reviewer": "sre-payments@acme.test",
+  "commit_sha": "9c4f2a7d81be05e3af6c1d920b7e4f83c1a5d706",
+  "commit_message": "refactor pool factory, reduce pool size to match steady-state load",
+  "change_class": "application_config",
+  "risk_score": 0.72,
+  "risk_factors": [
+    "change touches database connection configuration for a critical-tier service",
+    "author has 4 prior changes to this configuration",
+    "released outside the Tuesday/Thursday change window",
+    "no canary stage — released to production fleet directly"
+  ],
+  "file_path": "deploy/payment-service.yaml",
+  "diff": "-  DB_POOL_SIZE: '50'\n+  DB_POOL_SIZE: '8'\n-  DB_POOL_LEAK_GUARD: 'true'\n+  DB_POOL_LEAK_GUARD: 'false'\n   DB_POOL_IDLE_TIMEOUT_MS: '60000'\n   DB_POOL_FACTORY: 'unified'",
+  "files_changed": 14,
+  "lines_added": 412,
+  "lines_removed": 388,
+  "ci": {
+    "tests_passed": true,
+    "coverage_delta_pct": -0.4,
+    "note": "the pool factory refactor was covered; the configuration values were not asserted anywhere"
+  },
+  "outcome": "rolled_forward",
+  "outcome_detail": "the configuration was corrected in place via the known-safe profile rather than reverting the whole release; the pool factory refactor was retained",
+  "reviewer_note": "Approved on the basis that the refactor was well tested. I did not notice the two config lines change alongside it — the review view collapsed deploy/*.yaml into a single file entry."
+}

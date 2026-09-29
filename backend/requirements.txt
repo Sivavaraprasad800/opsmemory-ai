@@ -1,0 +1,28 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic==2.10.4
+pydantic-settings==2.7.0
+httpx==0.28.1
+openai==1.59.6
+numpy==2.2.1
+PyJWT==2.10.1
+python-dotenv==1.0.1
+
+# --- Optional: real Hindsight memory server -------------------------------------------
+# Installed by default so the switch from fallback -> real Hindsight is a pure env change.
+# If the package is missing, app.memory falls back to its built-in implementation and the
+# platform still runs (see docs/MEMORY.md).
+# Loosely pinned on purpose so a newer SDK is not blocked by a stale pin here.
+hindsight-client>=0.4
+
+# --- Optional: PostgreSQL driver -------------------------------------------------------
+# The default database is SQLite, which needs nothing. This is only required when
+# DATABASE_URL points at PostgreSQL, e.g.
+#   DATABASE_URL=postgresql+psycopg://opsmemory:opsmemory@localhost:5432/opsmemory
+# Installed by default so that the documented PostgreSQL path is a pure env change.
+psycopg[binary]>=3.2
+
+# --- Test -----------------------------------------------------------------------------
+pytest==8.3.4
+pytest-cov==6.0.0

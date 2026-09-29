@@ -1,0 +1,143 @@
+{
+  "incident_id": 1042,
+  "reference": "INC-1042",
+  "title": "Connection pool exhaustion on payment-service",
+  "service": "payment-service",
+  "environment": "production",
+  "severity": "critical",
+  "status": "resolved",
+  "detected_at": "2026-09-29T13:48:02Z",
+  "resolved_at": "2026-09-29T14:06:31Z",
+  "mttr_seconds": 1109,
+
+  "detection": {
+    "opened_by": "detection_engine",
+    "committee_verdicts": {
+      "robust_z": { "voted_anomaly": true, "score": 7.41, "metric": "connection_saturation" },
+      "rolling_median": { "voted_anomaly": true, "score": 0.68, "metric": "connection_saturation" },
+      "ewma_residual": { "voted_anomaly": true, "score": 4.12, "metric": "error_rate" },
+      "cusum": { "voted_anomaly": false, "score": 1.87, "metric": "latency_ms" }
+    },
+    "quorum": "3 of 4",
+    "floor_exceeded": true,
+    "direction_check": "pass",
+    "two_pass_debounce": "confirmed on second pass (4s later)",
+    "compared_against": "reference window 2026-09-29T13:13:02Z → 13:43:02Z (30 min, ending 5 min before detection)"
+  },
+
+  "baseline": {
+    "captured_at": "2026-09-29T13:13:02Z",
+    "window_seconds": 1800,
+    "connection_saturation": 0.21,
+    "connections": 10.5,
+    "pool_size": 50,
+    "error_rate": 0.004,
+    "latency_ms": 128.0,
+    "cpu_pct": 24.1,
+    "mem_pct": 58.0,
+    "health_score": 0.98
+  },
+
+  "symptoms": [
+    "connection_saturation rose from 0.21 to 0.97 over 14 minutes",
+    "error_rate rose from 0.4% to 3.4% on POST /authorize",
+    "p95 latency rose from 128ms to 4602ms",
+    "18 occurrences of a previously unseen connection-acquisition failure template"
+  ],
+
+  "ai_investigation": {
+    "investigation_id": 3311,
+    "mode": "llm",
+    "tool_calls": 11,
+    "conclusion": {
+      "root_cause_category": "configuration_regression",
+      "root_cause": "Deployment v2.41.0 reduced DB_POOL_SIZE from 50 to 8 while refactoring the pool factory, and set DB_POOL_LEAK_GUARD=false, which disabled the guard that reclaims connections abandoned by the refactored code path. Demand exceeds the reduced capacity, and leaked connections are no longer reclaimed.",
+      "confidence_status": "supported",
+      "confidence_basis": "deployment diff correlates with the onset within the change window; pool config reload line confirms leak_guard=false; the failure template is new and does not appear anywhere in the 30-day baseline",
+      "ruled_out": [
+        "database overload — payments-db CPU and connection counts were flat throughout",
+        "cache misconfiguration — cache-service error rate and hit ratio unchanged",
+        "traffic spike — request rate was within 4% of the weekly median"
+      ]
+    },
+    "causal_claims": [
+      { "kind": "preceded_by", "subject": "deployment v2.41.0", "object": "incident onset", "detail": "release completed 21 minutes before detection" },
+      { "kind": "consistent_with", "subject": "leak_guard=false", "object": "connection_saturation climb", "detail": "guard disabled in the same change that reduced pool size" }
+    ],
+    "note": "No claim of causation is asserted from temporal proximity alone. The deployment is related by preceded_by and consistent_with, and the conclusion rests on the configuration diff, not on ordering."
+  },
+
+  "remediation_history": [
+    {
+      "attempt": 1,
+      "action_code": "restart_service",
+      "action_name": "Restart the service",
+      "applied_by": "operator (human)",
+      "ai_advised": false,
+      "ai_avoided_actions": ["restart_service"],
+      "safety_checks": "10/10 passed",
+      "verification": {
+        "verdict": "verification_failed",
+        "outcome": "failed",
+        "improvement_pct": 46.2,
+        "settle_seconds": 300,
+        "blocking_failures": ["root_cause_removed"],
+        "checks": [
+          { "check_name": "primary_signal", "metric": "connection_saturation", "before": 0.97, "after": 0.34, "baseline": 0.21, "passed": true, "is_primary": true },
+          { "check_name": "error_rate_normalised", "metric": "error_rate", "before": 0.034, "after": 0.008, "baseline": 0.004, "passed": true, "is_primary": false },
+          { "check_name": "root_cause_removed", "metric": "fault_state", "before": 1.0, "after": 1.0, "baseline": 0.0, "passed": false, "is_primary": false, "detail": "the underlying fault 'connection_leak' is still active — the remediation addressed symptoms only" },
+          { "check_name": "latency_normalised", "metric": "latency_ms", "before": 4602.0, "after": 186.0, "baseline": 128.0, "passed": true, "is_primary": false },
+          { "check_name": "no_new_critical_signatures", "metric": "error_signatures", "before": null, "after": 1.0, "baseline": 0.0, "passed": false, "is_primary": false },
+          { "check_name": "service_healthy", "metric": "health_score", "before": 0.31, "after": 0.84, "baseline": 0.98, "passed": true, "is_primary": false }
+        ],
+        "verdict_reason": "the underlying fault 'connection_leak' is still active — the remediation addressed symptoms only; new/worsening error signatures: Cannot acquire connection from pool within <DURATION>",
+        "post_settle_observation": "connection_saturation resumed climbing from 0.34 to 0.89 within 6 minutes of the restart",
+        "retained_to_memory": true
+      }
+    },
+    {
+      "attempt": 2,
+      "action_code": "update_known_safe_configuration",
+      "action_name": "Apply known-safe configuration",
+      "applied_by": "ai (auto-approved)",
+      "ai_advised": true,
+      "rationale": "Attempt 1 cleared the pool but left the fault active. The recorded failure of restart_service, plus the runbook's explicit warning that a restart will not remove a leak, point at the configuration change that disabled the leak guard.",
+      "safety_checks": "10/10 passed",
+      "rollback_available": true,
+      "verification": {
+        "verdict": "verified_success",
+        "outcome": "succeeded",
+        "improvement_pct": 88.0,
+        "settle_seconds": 90,
+        "blocking_failures": [],
+        "checks": [
+          { "check_name": "primary_signal", "metric": "connection_saturation", "before": 0.89, "after": 0.09, "baseline": 0.21, "passed": true, "is_primary": true },
+          { "check_name": "error_rate_normalised", "metric": "error_rate", "before": 0.029, "after": 0.003, "baseline": 0.004, "passed": true, "is_primary": false },
+          { "check_name": "root_cause_removed", "metric": "fault_state", "before": 1.0, "after": 0.0, "baseline": 0.0, "passed": true, "is_primary": false, "detail": "the underlying fault is no longer active" },
+          { "check_name": "latency_normalised", "metric": "latency_ms", "before": 4120.0, "after": 131.0, "baseline": 128.0, "passed": true, "is_primary": false },
+          { "check_name": "no_new_critical_signatures", "metric": "error_signatures", "before": null, "after": 0.0, "baseline": 0.0, "passed": true, "is_primary": false },
+          { "check_name": "service_healthy", "metric": "health_score", "before": 0.36, "after": 0.99, "baseline": 0.98, "passed": true, "is_primary": false }
+        ],
+        "verdict_reason": "all blocking checks passed: connection_saturation returned from 0.89 to 0.09 against a baseline of 0.21, and the underlying fault is no longer active.",
+        "retained_to_memory": true
+      }
+    }
+  ],
+
+  "learning": {
+    "retained_document_id": "incident-1042-experience",
+    "retained_memory_type": "experience",
+    "lessons": [
+      "restart_service clears a saturated pool but cannot remove a connection leak; it will refill within minutes",
+      "the deployment that reduced DB_POOL_SIZE also disabled DB_POOL_LEAK_GUARD, and the guard is what masks the leak in the short term",
+      "the pool config reload log line is emitted at INFO level and is easy to miss during triage"
+    ],
+    "preventive_actions": [
+      "add a deploy-time assertion that DB_POOL_LEAK_GUARD must be true in production",
+      "alert on pool_size changes as a configuration change, independent of the deploy outcome",
+      "promote the connection-acquisition failure template to a named alert rather than a raw log match"
+    ]
+  },
+
+  "postmortem_id": 187
+}

@@ -1,0 +1,101 @@
+# OpsMemory AI — one-command run.
+#
+#   docker compose up --build
+#     → backend on :8000, frontend on :5173, memory falls back to the local store.
+#
+#   docker compose --profile hindsight up --build
+#     → also starts a self-hosted Hindsight on :8888. Requires HINDSIGHT_LLM_API_KEY.
+#
+#   docker compose --profile postgres up --build
+#     → also starts PostgreSQL and points the backend at it.
+#
+# Nothing here is required to demo the platform. The zero-keys path is the default.
+
+name: opsmemory-ai
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-please-use-a-long-random-string}
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+
+      # Reasoning. Leave OPENAI_API_KEY empty for the deterministic offline reasoner.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+
+      # Memory. Points at the self-hosted service when that profile is active,
+      # otherwise at Hindsight Cloud if a key is supplied, otherwise falls back locally.
+      HINDSIGHT_BASE_URL: ${HINDSIGHT_BASE_URL:-}
+      HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
+      HINDSIGHT_BANK_ID: ${HINDSIGHT_BANK_ID:-opsmemory-org}
+      HINDSIGHT_REQUIRED: ${HINDSIGHT_REQUIRED:-false}
+
+      # Set by the postgres profile; otherwise the in-container SQLite default is used.
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/opsmemory.db}
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      # The Vite dev server proxies /api to this target.
+      VITE_API_TARGET: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------- optional
+
+  hindsight:
+    # Self-hosted open-source Hindsight. Without a key here, use Hindsight Cloud instead.
+    image: ghcr.io/vectorize-io/hindsight:latest
+    profiles: ["hindsight"]
+    ports:
+      - "8888:8888"   # API
+      - "9999:9999"   # control plane
+    environment:
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+    volumes:
+      - hindsight-data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: opsmemory
+      POSTGRES_PASSWORD: opsmemory
+      POSTGRES_DB: opsmemory
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opsmemory -d opsmemory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+  hindsight-data:
+  postgres-data:
