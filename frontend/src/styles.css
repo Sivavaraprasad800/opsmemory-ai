@@ -535,14 +535,17 @@ pre,
 
 .guide-compare {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
+  align-items: stretch;
 }
 .compare-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
 }
 .compare-card h3 {
   margin: 0;
@@ -571,6 +574,13 @@ pre,
 }
 .compare-card.with li {
   color: var(--text);
+}
+
+/* Responsive: stack cards on smaller screens */
+@media (max-width: 768px) {
+  .guide-compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 .demo-script {
